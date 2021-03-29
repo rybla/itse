@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 739fc5b9d4f6725403c01cc2bebe0a3581a281f9d6f6ea418824819876b5b731
+-- hash: 67eeb24a3f92b8450ac465a13d7ea4b092943aa78c3649b2368b032a966ad7dd
 
 name:           itse
 version:        0.1.0.0
@@ -27,13 +27,18 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
+      Language.Itse.Grammar
+      Language.Itse.Typechecking
+      Test
   other-modules:
       Paths_itse
   hs-source-dirs:
       src
+  default-extensions: GADTs KindSignatures ExplicitForAll RankNTypes FlexibleInstances MultiParamTypeClasses ScopedTypeVariables LambdaCase TypeFamilies
   build-depends:
       base >=4.7 && <5
+    , mtl
+    , transformers
   default-language: Haskell2010
 
 executable itse-exe
@@ -46,6 +51,8 @@ executable itse-exe
   build-depends:
       base >=4.7 && <5
     , itse
+    , mtl
+    , transformers
   default-language: Haskell2010
 
 test-suite itse-test
@@ -59,4 +66,6 @@ test-suite itse-test
   build-depends:
       base >=4.7 && <5
     , itse
+    , mtl
+    , transformers
   default-language: Haskell2010
