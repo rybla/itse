@@ -2,12 +2,9 @@ module Language.Itse.Checking where
 
 import Control.Applicative
 import Control.Monad.Except
--- import Control.Monad.Trans
 import Data.Maybe
 import Language.Itse.Grammar
 import Text.Printf
-import Prelude hiding (lookup)
-import qualified Prelude (lookup)
 
 {-
 ## Control Flow

@@ -39,6 +39,7 @@ library:
     - TypeFamilies
     - NamedFieldPuns
     - BlockArguments
+    - PatternSynonyms
 
 executables:
   itse-exe:
