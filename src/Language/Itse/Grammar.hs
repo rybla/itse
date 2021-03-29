@@ -4,39 +4,43 @@ data Term
   = -- x
     Term_Ref (Name Term)
   | -- λ x : t . a
-    Term_Abs (Name Term) Type Term
+    Term_AbsTm (Name Term) Type Term
   | -- a b
-    Term_App Term Term
+    Term_AppTm Term Term
+  | -- Λ x : k . a
+    Term_AbsTy (Name Type) Type Term
+  | -- a t
+    Term_AppTy Term Type
   deriving (Show, Eq)
 
 data Type
   = -- x
     Type_Ref (Name Type)
   | -- forall x : k . t
-    Type_All (Name Type) Kind Type
+    Type_AllTy (Name Type) Kind Type
   | -- Π x : s . t
-    Type_Pi (Name Term) Type Type
+    Type_PiTm (Name Term) Type Type
   | -- forall x : s . t
-    Type_AllDep (Name Term) Type Type
+    Type_AllTm (Name Term) Type Type
   | -- ι x . t
     Type_Iota (Name Term) Type
   | -- t a
-    Type_AppDep Type Term
+    Type_AppTm Type Term
   | -- λ x : k . t
-    Type_Abs (Name Type) Kind Type
+    Type_AbsTy (Name Type) Kind Type
   | -- λ x : s . t
-    Type_AbsDep (Name Term) Type Type
+    Type_AbsTm (Name Term) Type Type
   | -- s t
-    Type_App Type Type
+    Type_AppTy Type Type
   deriving (Show, Eq)
 
 data Kind
   = -- `*`
     Kind_Unit
   | -- Π x : t . k
-    Kind_PiDep (Name Term) Type Kind
+    Kind_PiTm (Name Term) Type Kind
   | -- Π x : k . t
-    Kind_Pi (Name Type) Kind Kind
+    Kind_PiTy (Name Type) Kind Kind
   deriving (Show, Eq)
 
 data Expr :: * -> * where
@@ -64,21 +68,21 @@ instance Show (Expr a) where
   show (Kind k) = show k
 
 data Name :: * -> * where
-  NameTerm :: String -> Name Term
-  NameType :: String -> Name Type
-  NameKind :: String -> Name Kind
+  NameTm :: String -> Name Term
+  NameTy :: String -> Name Type
+  NameKd :: String -> Name Kind
 
 instance Show (Name a) where
-  show (NameTerm x) = x
-  show (NameType x) = x
-  show (NameKind x) = x
+  show (NameTm x) = x
+  show (NameTy x) = x
+  show (NameKd x) = x
 
 instance Eq (Name a) where
-  NameTerm x == NameTerm y = x == y
-  NameType x == NameType y = x == y
-  NameKind x == NameKind y = x == y
+  NameTm x == NameTm y = x == y
+  NameTy x == NameTy y = x == y
+  NameKd x == NameKd y = x == y
 
 nameVariant :: Name a -> String
-nameVariant (NameTerm _) = "term"
-nameVariant (NameType _) = "type"
-nameVariant (NameKind _) = "kind"
+nameVariant (NameTm _) = "term"
+nameVariant (NameTy _) = "type"
+nameVariant (NameKd _) = "kind"
