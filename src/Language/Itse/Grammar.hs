@@ -1,5 +1,23 @@
 module Language.Itse.Grammar where
 
+{-
+## Prgm, Stmt
+-}
+
+data Prgm
+  = Prgm [Stmt]
+  deriving (Show, Eq)
+
+data Stmt
+  = Stmt_DefnTm (Name Term) Type Term
+  | Stmt_DefnTy (Name Type) Kind Type
+  | Stmt_DefnKd (Name Kind) Kind
+  deriving (Show, Eq)
+
+{-
+## Term, Type, Kind
+-}
+
 data Term
   = -- x
     Term_Ref (Name Term)
@@ -7,8 +25,8 @@ data Term
     Term_AbsTm (Name Term) Type Term
   | -- a b
     Term_AppTm Term Term
-  | -- Λ x : k . a
-    Term_AbsTy (Name Type) Type Term
+  | -- λ x : k . a
+    Term_AbsTy (Name Type) Kind Term
   | -- a t
     Term_AppTy Term Type
   deriving (Show, Eq)
@@ -16,32 +34,30 @@ data Term
 data Type
   = -- x
     Type_Ref (Name Type)
-  | -- forall x : k . t
-    Type_AllTy (Name Type) Kind Type
-  | -- Π x : s . t
-    Type_PiTm (Name Term) Type Type
-  | -- forall x : s . t
-    Type_AllTm (Name Term) Type Type
-  | -- ι x . t
-    Type_Iota (Name Term) Type
+  | -- λ x : s . t
+    Type_AbsTm (Name Term) Type Type
   | -- t a
     Type_AppTm Type Term
   | -- λ x : k . t
     Type_AbsTy (Name Type) Kind Type
-  | -- λ x : s . t
-    Type_AbsTm (Name Term) Type Type
   | -- s t
     Type_AppTy Type Type
+  | -- ι x . t
+    Type_Iota (Name Term) Type
   deriving (Show, Eq)
 
 data Kind
   = -- `*`
     Kind_Unit
   | -- Π x : t . k
-    Kind_PiTm (Name Term) Type Kind
+    Kind_AbsTm (Name Term) Type Kind
   | -- Π x : k . t
-    Kind_PiTy (Name Type) Kind Kind
+    Kind_AbsTy (Name Type) Kind Kind
   deriving (Show, Eq)
+
+{-
+## Expr
+-}
 
 data Expr :: * -> * where
   Term :: Term -> Expr Term
@@ -66,6 +82,10 @@ instance Show (Expr a) where
   show (Term a) = show a
   show (Type t) = show t
   show (Kind k) = show k
+
+{-
+## Name
+-}
 
 data Name :: * -> * where
   NameTm :: String -> Name Term

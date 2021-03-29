@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 67eeb24a3f92b8450ac465a13d7ea4b092943aa78c3649b2368b032a966ad7dd
+-- hash: 29e62080b050ba8f42cffe30a2cc8060e0dc5aed6c4261e0613d164fd7406a3c
 
 name:           itse
 version:        0.1.0.0
@@ -27,14 +27,15 @@ source-repository head
 
 library
   exposed-modules:
+      Language.Itse.Checking
       Language.Itse.Grammar
-      Language.Itse.Typechecking
+      Language.Itse.Typechecking_Old
       Test
   other-modules:
       Paths_itse
   hs-source-dirs:
       src
-  default-extensions: GADTs KindSignatures ExplicitForAll RankNTypes FlexibleInstances MultiParamTypeClasses ScopedTypeVariables LambdaCase TypeFamilies
+  default-extensions: GADTs KindSignatures ExplicitForAll RankNTypes FlexibleInstances MultiParamTypeClasses ScopedTypeVariables LambdaCase TypeFamilies NamedFieldPuns BlockArguments
   build-depends:
       base >=4.7 && <5
     , mtl
@@ -47,7 +48,7 @@ executable itse-exe
       Paths_itse
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall
   build-depends:
       base >=4.7 && <5
     , itse

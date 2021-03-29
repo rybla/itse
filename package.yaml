@@ -37,6 +37,8 @@ library:
     - ScopedTypeVariables
     - LambdaCase
     - TypeFamilies
+    - NamedFieldPuns
+    - BlockArguments
 
 executables:
   itse-exe:
@@ -46,6 +48,7 @@ executables:
       - -threaded
       - -rtsopts
       - -with-rtsopts=-N
+      - -Wall
     dependencies:
       - itse
 
