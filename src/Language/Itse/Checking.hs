@@ -2,7 +2,7 @@ module Language.Itse.Checking where
 
 import Control.Applicative
 import Control.Monad.Except
-import Data.Maybe
+import Control.Monad.State
 import Language.Itse.Grammar
 import Text.Printf
 
@@ -20,9 +20,9 @@ type E = String
 
 data Context
   = Context_Empty
-  | Context_Typing Context (Name Term) Type
-  | Context_Kinding Context (Name Type) Kind
-  | Context_Closure Context Closure
+  | Context_Typing (Name Term) Type Context
+  | Context_Kinding (Name Type) Kind Context
+  | Context_Closure Closure Context
 
 {-
 ## Closures
@@ -52,9 +52,33 @@ lookupClosure = \case
 lookupContext :: Name a -> Context -> Maybe (LookupResult a)
 lookupContext x = \case
   Context_Empty -> Nothing
-  Context_Typing ctx _ _ -> lookupContext x ctx
-  Context_Kinding ctx _ _ -> lookupContext x ctx
-  Context_Closure ctx clo -> lookupClosure x clo <|> lookupContext x ctx
+  Context_Typing _ _ ctx -> lookupContext x ctx
+  Context_Kinding _ _ ctx -> lookupContext x ctx
+  Context_Closure clo ctx -> lookupClosure x clo <|> lookupContext x ctx
+
+{-
+## Processing
+-}
+
+processPrgm :: Prgm -> StateT Context M ()
+processPrgm (Prgm stmts) = mapM_ processStmt stmts
+
+processStmt :: Stmt -> StateT Context M ()
+processStmt = \case
+  Stmt_DefnTm x t a -> do
+    declareNameTy x t
+    t' <- lift . synthesizeType a =<< get
+    lift $ unify (Type t) (Type t')
+  Stmt_DefnTy x k t -> do
+    declareNameKd x k
+    k' <- lift . synthesizeKind t =<< get
+    lift $ unify (Kind k) (Kind k')
+
+declareNameTy :: Name Term -> Type -> StateT Context M ()
+declareNameTy x t = modify $ Context_Typing x t
+
+declareNameKd :: Name Type -> Kind -> StateT Context M ()
+declareNameKd x k = modify $ Context_Kinding x k
 
 {-
 ## Free Names
@@ -63,7 +87,7 @@ lookupContext x = \case
 freeNameTms :: Expr a -> [Name Term]
 freeNameTms (Term _a) = case _a of
   Term_Ref x -> [x]
-  Term_AbsTm x t a -> (freeNameTms (Type t) ++ freeNameTms (Term a)) `listMinus` x
+  Term_AbsTm x t a -> (freeNameTms (Type t) ++ freeNameTms (Term a)) `withoutName` x
   Term_AppTm a b -> freeNameTms (Term a) ++ freeNameTms (Term b)
   Term_AbsTy _ k a -> freeNameTms (Kind k) ++ freeNameTms (Term a)
   Term_AppTy a t -> freeNameTms (Term a) ++ freeNameTms (Type t)
@@ -71,12 +95,12 @@ freeNameTms (Type _t) = case _t of
   Type_Ref _ -> []
   Type_AppTm t a -> freeNameTms (Type t) ++ freeNameTms (Term a)
   Type_AbsTy _ k t -> freeNameTms (Kind k) ++ freeNameTms (Type t)
-  Type_AbsTm x s t -> (freeNameTms (Type s) ++ freeNameTms (Type t)) `listMinus` x
+  Type_AbsTm x s t -> (freeNameTms (Type s) ++ freeNameTms (Type t)) `withoutName` x
   Type_AppTy s t -> freeNameTms (Type s) ++ freeNameTms (Type t)
-  Type_Iota x t -> freeNameTms (Type t) `listMinus` x
+  Type_Iota x t -> freeNameTms (Type t) `withoutName` x
 freeNameTms (Kind _k) = case _k of
   Kind_Unit -> []
-  Kind_AbsTm x t k -> (freeNameTms (Type t) ++ freeNameTms (Kind k)) `listMinus` x
+  Kind_AbsTm x t k -> (freeNameTms (Type t) ++ freeNameTms (Kind k)) `withoutName` x
   Kind_AbsTy _ k l -> freeNameTms (Kind k) ++ freeNameTms (Kind l)
 
 freeNameTys :: Expr a -> [Name Type]
@@ -84,115 +108,115 @@ freeNameTys (Term _a) = case _a of
   Term_Ref _ -> []
   Term_AbsTm _ t a -> freeNameTys (Type t) ++ freeNameTys (Term a)
   Term_AppTm a b -> freeNameTys (Term a) ++ freeNameTys (Term b)
-  Term_AbsTy x k a -> (freeNameTys (Kind k) ++ freeNameTys (Term a)) `listMinus` x
+  Term_AbsTy x k a -> (freeNameTys (Kind k) ++ freeNameTys (Term a)) `withoutName` x
   Term_AppTy a t -> freeNameTys (Term a) ++ freeNameTys (Type t)
 freeNameTys (Type _t) = case _t of
   Type_Ref x -> [x]
   Type_Iota _ t -> freeNameTys (Type t)
   Type_AppTm t a -> freeNameTys (Type t) ++ freeNameTys (Term a)
-  Type_AbsTy x k t -> (freeNameTys (Kind k) ++ freeNameTys (Type t)) `listMinus` x
+  Type_AbsTy x k t -> (freeNameTys (Kind k) ++ freeNameTys (Type t)) `withoutName` x
   Type_AbsTm _ s t -> freeNameTys (Type s) ++ freeNameTys (Type t)
   Type_AppTy s t -> freeNameTys (Type s) ++ freeNameTys (Type t)
 freeNameTys (Kind _k) = case _k of
   Kind_Unit -> []
   Kind_AbsTm _ t k -> freeNameTys (Type t) ++ freeNameTys (Kind k)
-  Kind_AbsTy x k l -> (freeNameTys (Kind k) ++ freeNameTys (Kind l)) `listMinus` x
+  Kind_AbsTy x k l -> (freeNameTys (Kind k) ++ freeNameTys (Kind l)) `withoutName` x
 
-listMinus :: Eq a => [a] -> a -> [a]
-listMinus xs x = filter (x /=) xs
+withoutName :: [Name a] -> Name a -> [Name a]
+withoutName xs x = filter (x /=) xs
 
 {-
-## Well-formedness
+## Wellformed-ness
 -}
 
-checkWellFormedContext :: Context -> M ()
-checkWellFormedContext _ctx = case _ctx of
+wellformedContext :: Context -> M ()
+wellformedContext _ctx = case _ctx of
   Context_Empty ->
     return ()
-  Context_Typing ctx _ t -> do
-    checkWellFormedContext ctx
-    checkKind ctx t Kind_Unit
-  Context_Kinding ctx _ k -> do
-    checkWellFormedContext ctx
-    checkWellFormedKind ctx k
-  Context_Closure ctx clo ->
-    checkWellFormedClosure ctx clo
+  Context_Typing _ t ctx -> do
+    wellformedContext ctx
+    checkKind t Kind_Unit ctx
+  Context_Kinding _ k ctx -> do
+    wellformedContext ctx
+    wellformedKind k ctx
+  Context_Closure clo ctx ->
+    wellformedClosure clo ctx
 
-checkWellFormedClosure :: Context -> Closure -> M ()
-checkWellFormedClosure ctx clo = do
-  mapM_ (uncurry (checkType (Context_Closure ctx clo)) . snd) $ bindingsTm clo
-  mapM_ (uncurry (checkKind (Context_Closure ctx clo)) . snd) $ bindingsTy clo
-  mapM_ (checkWellFormedKind ctx . snd) $ bindingsKd clo
+wellformedClosure :: Closure -> Context -> M ()
+wellformedClosure clo ctx = do
+  mapM_ (\(_, (a, t)) -> checkType a t (Context_Closure clo ctx)) $ bindingsTm clo
+  mapM_ (\(_, (t, k)) -> checkKind t k (Context_Closure clo ctx)) $ bindingsTy clo
+  mapM_ (flip wellformedKind ctx . snd) $ bindingsKd clo
 
-checkWellFormedKind :: Context -> Kind -> M ()
-checkWellFormedKind ctx _k = case _k of
+wellformedKind :: Kind -> Context -> M ()
+wellformedKind _k ctx = case _k of
   Kind_Unit ->
     return ()
   Kind_AbsTy x k l -> do
-    checkWellFormedKind (Context_Kinding ctx x k) l
-    checkWellFormedKind ctx k
+    wellformedKind l (Context_Kinding x k ctx)
+    wellformedKind k ctx
   Kind_AbsTm x t k -> do
-    checkWellFormedKind (Context_Typing ctx x t) k
-    checkKind ctx t Kind_Unit
+    wellformedKind k (Context_Typing x t ctx)
+    checkKind t Kind_Unit ctx
 
 {-
 ## Kinding
 -}
 
-checkKind :: Context -> Type -> Kind -> M ()
-checkKind ctx t k = do
-  checkWellFormedKind ctx k -- is this needed?
-  k' <- synthesizeKind ctx t
+checkKind :: Type -> Kind -> Context -> M ()
+checkKind t k ctx = do
+  wellformedKind k ctx -- is this needed?
+  k' <- synthesizeKind t ctx
   unify (Kind k) (Kind k')
 
-synthesizeKind :: Context -> Type -> M Kind
-synthesizeKind ctx _t = case _t of
+synthesizeKind :: Type -> Context -> M Kind
+synthesizeKind _t ctx = case _t of
   -- x
   Type_Ref x ->
     -- ctx |- x : k in ctx
-    synthesizeKind_NameTy ctx x
+    synthesizeKind_NameTy x ctx
   -- s a
   Type_AppTm s a -> do
     -- ctx |- s :: Π x : t . k
     (x, _, k) <-
-      synthesizeKind ctx s >>= \case
+      synthesizeKind s ctx >>= \case
         Kind_AbsTm x t k -> return (x, t, k)
         k -> throwError $ printf "invalid type-term applicant: `%s :: %s`" (show s) (show k)
     -- ctx |- a :: s
-    checkType ctx a s
+    checkType a s ctx
     -- ctx |- s a :: [x => a] k
     return . fromExpr $ substitute x (Term a) (Kind k)
   -- λ x : k . t
   Type_AbsTy x k t -> do
     -- ctx, x :: k |- t :: l
-    l <- synthesizeKind (Context_Kinding ctx x k) t
+    l <- synthesizeKind t (Context_Kinding x k ctx)
     -- ctx |- k WF
-    checkWellFormedKind ctx k
+    wellformedKind k ctx
     -- ctx |- forall x : k . t :: Π x : k . l
     return $ Kind_AbsTy x k l
   -- λ x : s . t
   Type_AbsTm x s t -> do
     -- ctx, x :: s |- t :: k
-    k <- synthesizeKind (Context_Typing ctx x s) t
+    k <- synthesizeKind t (Context_Typing x s ctx)
     -- ctx |- t :: *
-    checkKind ctx t Kind_Unit
+    checkKind t Kind_Unit ctx
     -- ctx |- λ x : s . t :: Π x : s . k
     return $ Kind_AbsTm x s k
   -- s t
   Type_AppTy s t -> do
     -- ctx |- s :: Π x : k . l
     (x, k, l) <-
-      synthesizeKind ctx s >>= \case
+      synthesizeKind s ctx >>= \case
         Kind_AbsTy x k l -> return (x, k, l)
         k -> throwError $ printf "invalid type-type applicant: `%s :: %s`" (show s) (show k)
     -- ctx |- t :: k
-    checkKind ctx t k
+    checkKind t k ctx
     -- ctx |- s t :: [x => t] l
     return . fromExpr $ substitute x (Type t) (Kind l)
   -- ι x . t
   Type_Iota x t -> do
     -- ctx, x :: ι x . t |- t :: *
-    checkKind (Context_Typing ctx x (Type_Iota x t)) t Kind_Unit
+    checkKind t Kind_Unit (Context_Typing x (Type_Iota x t) ctx)
     -- ctx |- ι x . t :: *
     return Kind_Unit
 
@@ -200,17 +224,17 @@ synthesizeKind ctx _t = case _t of
 ## Typing
 -}
 
-checkType :: Context -> Term -> Type -> M ()
-checkType ctx a _t = case _t of
+checkType :: Term -> Type -> Context -> M ()
+checkType a _t ctx = case _t of
   -- SelfGen
   -- ι x . t
   Type_Iota x t -> do
     -- ctx |- a :: [x => a] t
-    checkType ctx a (fromExpr $ substitute x (Term a) (Type t))
+    checkType a (fromExpr $ substitute x (Term a) (Type t)) ctx
     -- ctx |- ι x . t :: *
-    checkKind ctx (Type_Iota x t) Kind_Unit
+    checkKind (Type_Iota x t) Kind_Unit ctx
   t ->
-    synthesizeType ctx a >>= \case
+    synthesizeType a ctx >>= \case
       -- SelfInst
       -- TODO: potential problem -- what if doesn't want to SelfInst yet?
       -- ctx |- a :: ι x . t'
@@ -220,47 +244,47 @@ checkType ctx a _t = case _t of
       t' ->
         unify (Type t) (Type t')
 
-synthesizeType :: Context -> Term -> M Type
-synthesizeType ctx _a = case _a of
+synthesizeType :: Term -> Context -> M Type
+synthesizeType _a ctx = case _a of
   -- x
   Term_Ref x ->
-    synthesizeType_NameTm ctx x
+    synthesizeType_NameTm x ctx
   -- λ x : s . a
   Term_AbsTm x s a -> do
     -- ctx |- s :: *
-    checkKind ctx s Kind_Unit
+    checkKind s Kind_Unit ctx
     -- ctx, x :: a |- a :: t
-    t <- synthesizeType (Context_Typing ctx x s) a
+    t <- synthesizeType a (Context_Typing x s ctx)
     -- ctx |- λ x : s . a :: λ x : s . t
     return $ Type_AbsTm x s t
   -- a b
   Term_AppTm a b -> do
     -- ctx |- a :: λ x : s . t
     (x, s, t) <-
-      synthesizeType ctx a >>= \case
+      synthesizeType a ctx >>= \case
         Type_AbsTm x s t -> return (x, s, t)
         t -> throwError $ printf "invalid term-term applicant: `%s :: %s`" (show a) (show t)
     -- ctx |- b :: s
-    checkType ctx b s
+    checkType b s ctx
     -- ctx |- a b ::
     return . fromExpr $ substitute x (Term b) (Type t)
   -- λ x : k . a
   Term_AbsTy x k a -> do
     -- ctx |- k WF
-    checkWellFormedKind ctx k
+    wellformedKind k ctx
     -- ctx, x :: k |- a :: t
-    t <- synthesizeType (Context_Kinding ctx x k) a
+    t <- synthesizeType a (Context_Kinding x k ctx)
     -- ctx |- λ x : k . a :: λ x : k . t
     return $ Type_AbsTy x k t
   -- a s
   Term_AppTy a s -> do
     -- ctx |- a :: λ x : k . t
     (x, k, t) <-
-      synthesizeType ctx a >>= \case
+      synthesizeType a ctx >>= \case
         Type_AbsTy x k t -> return (x, k, t)
         t -> throwError $ printf "invalid term-type applicant: `%s :: %s`" (show a) (show t)
     -- ctx |- s :: k
-    checkKind ctx s k
+    checkKind s k ctx
     -- ctx |- a t :: [x => s] t
     return . fromExpr $ substitute x (Type s) (Type t)
 
@@ -268,33 +292,33 @@ synthesizeType ctx _a = case _a of
 ## Names
 -}
 
-synthesizeType_NameTm :: Context -> Name Term -> M Type
-synthesizeType_NameTm Context_Empty x =
+synthesizeType_NameTm :: Name Term -> Context -> M Type
+synthesizeType_NameTm x Context_Empty =
   throwError $ printf "undeclared term name: `%s`" (show x)
-synthesizeType_NameTm (Context_Typing ctx y t) x =
+synthesizeType_NameTm x (Context_Typing y t ctx) =
   if x == y
     then return t
-    else synthesizeType_NameTm ctx x
-synthesizeType_NameTm (Context_Kinding ctx _ _) x =
-  synthesizeType_NameTm ctx x
-synthesizeType_NameTm (Context_Closure ctx clo) x =
+    else synthesizeType_NameTm x ctx
+synthesizeType_NameTm x (Context_Kinding _ _ ctx) =
+  synthesizeType_NameTm x ctx
+synthesizeType_NameTm x (Context_Closure clo ctx) =
   case lookupClosure x clo of
     Just (_, t) -> return t
-    Nothing -> synthesizeType_NameTm ctx x
+    Nothing -> synthesizeType_NameTm x ctx
 
-synthesizeKind_NameTy :: Context -> Name Type -> M Kind
-synthesizeKind_NameTy Context_Empty x =
+synthesizeKind_NameTy :: Name Type -> Context -> M Kind
+synthesizeKind_NameTy x Context_Empty =
   throwError $ printf "undeclared type name: `%s`" (show x)
-synthesizeKind_NameTy (Context_Typing ctx _ _) x =
-  synthesizeKind_NameTy ctx x
-synthesizeKind_NameTy (Context_Kinding ctx y k) x =
+synthesizeKind_NameTy x (Context_Typing _ _ ctx) =
+  synthesizeKind_NameTy x ctx
+synthesizeKind_NameTy x (Context_Kinding y k ctx) =
   if x == y
     then return k
-    else synthesizeKind_NameTy ctx x
-synthesizeKind_NameTy (Context_Closure ctx clo) x =
+    else synthesizeKind_NameTy x ctx
+synthesizeKind_NameTy x (Context_Closure clo ctx) =
   case lookupClosure x clo of
     Just (_, k) -> return k
-    Nothing -> synthesizeKind_NameTy ctx x
+    Nothing -> synthesizeKind_NameTy x ctx
 
 {-
 ## Unification
@@ -360,15 +384,15 @@ unify e1 e2 =
 ## Reduction
 -}
 
-evaluate :: Context -> Expr a -> M (Expr a)
-evaluate ctx e =
-  reduce ctx e >>= \case
-    Just e' -> evaluate ctx e'
+evaluate :: Expr a -> Context -> M (Expr a)
+evaluate e ctx =
+  reduce e ctx >>= \case
+    Just e' -> evaluate e' ctx
     Nothing -> return e
 
-reduce :: Context -> Expr a -> M (Maybe (Expr a))
+reduce :: Expr a -> Context -> M (Maybe (Expr a))
 --
-reduce ctx (Term _a) = case _a of
+reduce (Term _a) ctx = case _a of
   --
   Term_Ref x ->
     return $ Term . fst <$> lookupContext x ctx
@@ -378,7 +402,7 @@ reduce ctx (Term _a) = case _a of
   --
   Term_AppTm _a b -> do
     (x, a) <-
-      evaluate ctx (Term _a) >>= \case
+      evaluate (Term _a) ctx >>= \case
         Term (Term_AbsTm x _ a) -> return (x, a)
         a -> throwError $ printf "invalid term-term applicant: `%s`" (show a)
     return . Just $ substitute x (Term b) (Term a)
@@ -388,12 +412,12 @@ reduce ctx (Term _a) = case _a of
   --
   Term_AppTy _a t -> do
     (x, a) <-
-      evaluate ctx (Term _a) >>= \case
+      evaluate (Term _a) ctx >>= \case
         Term (Term_AbsTy x _ a) -> return (x, a)
         a -> throwError $ printf "invalid term-type applicant: `%s`" (show a)
     return . Just $ substitute x (Type t) (Term a)
 --
-reduce ctx (Type _t) = case _t of
+reduce (Type _t) ctx = case _t of
   --
   Type_Ref x ->
     return $ Type . fst <$> lookupContext x ctx
@@ -403,7 +427,7 @@ reduce ctx (Type _t) = case _t of
   --
   Type_AppTm _t a -> do
     (x, t) <-
-      evaluate ctx (Type _t) >>= \case
+      evaluate (Type _t) ctx >>= \case
         Type (Type_AbsTm x _ t) -> return (x, t)
         t -> throwError $ printf "invalid type-term applicant: `%s`" (show t)
     return . Just $ substitute x (Term a) (Type t)
@@ -413,15 +437,15 @@ reduce ctx (Type _t) = case _t of
   --
   Type_AppTy _s t -> do
     (x, s) <-
-      evaluate ctx (Type _s) >>= \case
+      evaluate (Type _s) ctx >>= \case
         Type (Type_AbsTy x _ s) -> return (x, s)
         s -> throwError $ printf "invalid type-type applicant: `%s`" (show s)
     return . Just $ substitute x (Type t) (Type s)
   --
   Type_Iota _ _ -> do
     return Nothing
---
-reduce _ (Kind _) =
+-- substitutes kind
+reduce (Kind _k) _ =
   return Nothing
 
 {-
