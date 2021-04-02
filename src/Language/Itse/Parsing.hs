@@ -23,11 +23,10 @@ stmt :: Parser Stmt
 stmt =
   choice . map try $
     [ stmt_DefnTm,
-      stmt_DefnTy,
-      stmt_DefnKd
+      stmt_DefnTy
     ]
 
-stmt_DefnTm, stmt_DefnTy, stmt_DefnKd :: Parser Stmt
+stmt_DefnTm, stmt_DefnTy :: Parser Stmt
 stmt_DefnTm =
   Stmt_DefnTm
     <$> (symbol "define" >> symbol "term" >> nameTm)
@@ -38,10 +37,6 @@ stmt_DefnTy =
     <$> (symbol "define" >> symbol "type" >> nameTy)
     <*> (typingConstraint >> kind)
     <*> (assignment >> type_)
-stmt_DefnKd =
-  Stmt_DefnKd
-    <$> (symbol "define" >> symbol "kind" >> nameKd)
-    <*> (assignment >> kind)
 
 {-
 ### Term
@@ -130,12 +125,10 @@ kind =
   choice . map try $
     [ kind_Unit,
       kind_AbsTm,
-      kind_AbsTy,
-      kind_Ref
+      kind_AbsTy
     ]
 
-kind_Ref, kind_Unit, kind_AbsTm, kind_AbsTy :: Parser Kind
-kind_Ref = Kind_Ref <$> nameKd
+kind_Unit, kind_AbsTm, kind_AbsTy :: Parser Kind
 kind_Unit = do point; return Kind_Unit
 kind_AbsTm = do lambda; (x, t) <- prmTm; k <- kind; return $ Kind_AbsTm x t k
 kind_AbsTy = do lambda; (x, k) <- prmTy; l <- kind; return $ Kind_AbsTy x k l
