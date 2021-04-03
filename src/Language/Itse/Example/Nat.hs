@@ -6,37 +6,37 @@ module Language.Itse.Example.Nat where
 -- import Language.Itse.Checking
 -- import Text.Printf
 import Language.Itse.Grammar
+import Language.Itse.Parsing
 
--- -- Nat :: *
--- -- Nat := ι x . λ (P : Nat -> *) . λ (n : Nat . P n -> P (suc n)) -> P zero -> P x
--- itse_Nat :: Type
--- itse_Nat =
---   (Type_Iota x) -- ι x .
---     ( (Type_AbsTy p (Type_Ref nat `Kind_ArrTm` Kind_Unit)) -- λ p : Nat -> * .
---         ( ( (Type_AbsTm n (Type_Ref nat)) -- λ n : Nat .
---               ( (Type_AppTm (Type_Ref p) (Term_Ref n)) -- P n ->
---                   `Type_ArrTm` (Type_AppTm (Type_Ref p) (Term_AppTm (Term_Ref suc) (Term_Ref n))) -- P (suc n)
---               )
---           )
---             `Type_ArrTm` ( (Type_AppTm (Type_Ref p) (Term_Ref zero)) -- P zero ->
---                              `Type_ArrTm` (Type_AppTm (Type_Ref p) (Term_Ref x)) -- P x
---                          )
---         )
---     )
---   where
---     x = NameTm $ Literal "x"
---     p = NameTy $ Literal "P"
---     nat = NameTy $ Literal "Nat"
---     n = NameTm $ Literal "n"
---     suc = NameTm $ Literal "suc"
---     zero = NameTm $ Literal "zero"
+{-
+Nat
+:: •
+:= ι[x]
+   λ{P : λ[_:Nat] •}
+   (λ[n : Nat] (P[n] -> P[suc[n]]) ->
+      P[zero] ->
+      P[x])
 
--- -- suc :: Nat -> Nat
--- -- suc := λ t : * . λ n : t . λ s : t . λ z . s n (n s z)
--- itse_suc :: Term
--- itse_suc = undefined
+suc
+:: Nat -> Nat
+:= λ{A : •} λ[n : Nat] [s : A -> A] λ[z : A] s[n][n[s][z]]
 
--- -- zero :: Nat
--- -- zero := λ t : * . λ s : t . λ z : t . z
--- itse_zero :: Term
--- itse_zero = undefined
+zero
+:: Nat
+:= λ{A : •} [s : A -> A] [z : A] z
+-}
+
+itse_Nat :: Type
+itse_Nat =
+  runParserStatic "Nat" type_ $
+    "ι[x] λ{P : λ[_:Nat] •} (λ[n : Nat] (P[n] -> P[suc[n]]) -> P[zero] -> P[x])"
+
+itse_suc :: Term
+itse_suc =
+  runParserStatic "suc" term $
+    "λ {A : •} [n : Nat] [s : A -> A] [z : A] s[n][n[s][z]]"
+
+itse_zero :: Term
+itse_zero =
+  runParserStatic "zero" term $
+    "λ {A : •} [s : A -> A] [z : A] z"

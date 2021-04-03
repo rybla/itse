@@ -16,6 +16,10 @@ type M = StateT Context (Except Exception)
 
 type Exception = String
 
+runM m = case runExcept $ evalStateT m Context_Empty of
+  Left expt -> error expt
+  Right a -> return a
+
 {-
 ## Contexts
 -}
@@ -358,7 +362,7 @@ synthesizeKind_NameTy x = go =<< get
 unify :: Expr a -> Expr a -> M ()
 unify e1 e2 =
   runExceptT (go e1 e2) >>= \case
-    Left (s1, s2) -> throwError $ printf "cannot unify subexpression `%s` with `%s`, in order to unify expression `%s` with `%s`" (show s1) (show s2) (show e1) (show e2)
+    Left (s1, s2) -> throwError $ printf "cannot unify subexpression\n\n  %s\n\nwith\n\n  %s,\n\nin order to unify expression\n\n  %s\n\nwith\n\n  %s\n\n" s1 s2 (show e1) (show e2)
     Right () -> return ()
   where
     go :: Expr a -> Expr a -> ExceptT (String, String) M ()

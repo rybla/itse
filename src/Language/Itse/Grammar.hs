@@ -3,7 +3,7 @@
 module Language.Itse.Grammar where
 
 -- import qualified Text.Pretty as Py
--- import Text.Printf (printf)
+import Text.Printf (printf)
 
 {-
 ## Prgm, Stmt
@@ -27,51 +27,39 @@ data Stmt
 data Term
   = -- x
     Term_Ref (Name Term)
-  | -- λ (x : t) a
+  | -- λ[x : t] a
     Term_AbsTm (Name Term) Type Term
-  | -- a (b)
+  | -- a [b]
     Term_AppTm Term Term
-  | -- λ {x : k} . a
+  | -- λ{x : k} . a
     Term_AbsTy (Name Type) Kind Term
   | -- a {t}
     Term_AppTy Term Type
-  deriving (Show, Eq)
+  deriving (Eq)
 
 data Type
   = -- x
     Type_Ref (Name Type)
-  | -- λ (x : s) t
+  | -- λ[x : s] t
     Type_AbsTm (Name Term) Type Type
-  | -- t (a)
+  | -- t [a]
     Type_AppTm Type Term
-  | -- λ {x : k} t
+  | -- λ{x : k} t
     Type_AbsTy (Name Type) Kind Type
   | -- s {t}
     Type_AppTy Type Type
-  | -- ι (x) t
+  | -- ι [x] t
     Type_Iota (Name Term) Type
-  deriving (Show, Eq)
-
--- pattern Type_ArrTm :: Type -> Type -> Type
--- pattern Type_ArrTm s t = Type_AbsTm (NameTm "_") s t
-
--- pattern Type_ArrTy :: Kind -> Type -> Type
--- pattern Type_ArrTy k t = Type_AbsTy (NameTy "_") k t
+  deriving (Eq)
 
 data Kind
-  = -- `*`
+  = -- `•`
     Kind_Unit
-  | -- λ (x : t) k
+  | -- λ[x : t] k
     Kind_AbsTm (Name Term) Type Kind
-  | -- λ {x : k} l
+  | -- λ{x : k} l
     Kind_AbsTy (Name Type) Kind Kind
-  deriving (Show, Eq)
-
--- pattern Kind_ArrTm :: Type -> Kind -> Kind
--- pattern Kind_ArrTm t k = Kind_AbsTm Wild t k
-
--- pattern Kind_ArrTy :: Kind -> Kind -> Kind
--- pattern Kind_ArrTy k l = Kind_AbsTy Wild k l
+  deriving (Eq)
 
 {-
 ## Expr
@@ -83,32 +71,34 @@ data Expr :: * -> * where
   Kind :: Kind -> Expr Kind
 
 fromExpr :: Expr a -> a
-fromExpr (Term a) = a
-fromExpr (Type t) = t
-fromExpr (Kind k) = k
+fromExpr = \case
+  Term a -> a
+  Type t -> t
+  Kind k -> k
 
--- class ToExpr a where
---   toExpr :: a -> Expr a
+class ToExpr a where
+  toExpr :: a -> Expr a
 
--- instance ToExpr Term where toExpr = Term
+instance ToExpr Term where toExpr = Term
 
--- instance ToExpr Type where toExpr = Type
+instance ToExpr Type where toExpr = Type
 
--- instance ToExpr Kind where toExpr = Kind
+instance ToExpr Kind where toExpr = Kind
+
+asExpr :: ToExpr a => (Expr a -> Expr b) -> (a -> b)
+asExpr f = fromExpr . f . toExpr
+
+asExpr2 :: (ToExpr a, ToExpr b) => (Expr a -> Expr b -> Expr c) -> (a -> b -> c)
+asExpr2 f e1 e2 = fromExpr $ f (toExpr e1) (toExpr e2)
+
+asExprF :: (ToExpr a, Functor f) => (Expr a -> f (Expr a)) -> (a -> f a)
+asExprF k = fmap fromExpr . k . toExpr
 
 instance Show (Expr a) where
-  show (Term a) = show a
-  show (Type t) = show t
-  show (Kind k) = show k
-
-{-
-## Param
--}
-
-data Param a
-  = Named (Name a)
-  | Wild
-  deriving (Eq, Show)
+  show = \case
+    Term a -> show a
+    Type t -> show t
+    Kind k -> show k
 
 {-
 ## Name
@@ -120,23 +110,74 @@ data Name :: * -> * where
   NameKd :: String -> Name Kind
 
 instance Show (Name a) where
-  show (NameTm x) = show x
-  show (NameTy x) = show x
-  show (NameKd x) = show x
+  show = fromName
 
 instance Eq (Name a) where
   NameTm x == NameTm y = x == y
   NameTy x == NameTy y = x == y
   NameKd x == NameKd y = x == y
 
+fromName :: Name a -> String
+fromName = \case
+  NameTm x -> x
+  NameTy x -> x
+  NameKd x -> x
+
 nameVariant :: Name a -> String
-nameVariant (NameTm _) = "term"
-nameVariant (NameTy _) = "type"
-nameVariant (NameKd _) = "kind"
+nameVariant = \case
+  NameTm _ -> "term"
+  NameTy _ -> "type"
+  NameKd _ -> "kind "
+
+class ToName a where
+  toName :: String -> Name a
+
+instance ToName Term where toName = NameTm
+
+instance ToName Type where toName = NameTy
+
+instance ToName Kind where toName = NameKd
 
 {-
 ## Pretty instances
 -}
+
+instance Show Term where
+  show = \case
+    -- x
+    Term_Ref x -> show x
+    -- λ[x : t] a
+    Term_AbsTm x t a -> printf "λ[%s : %s] %s" (show x) (show t) (show a)
+    -- a[b]
+    Term_AppTm a b -> printf "%s[%s]" (show a) (show b)
+    -- λ{x : k} a
+    Term_AbsTy x k a -> printf "λ{%s : %s} %s" (show x) (show k) (show a)
+    -- a {t}
+    Term_AppTy a t -> printf "%s{%s}" (show a) (show t)
+
+instance Show Type where
+  show = \case
+    -- x
+    Type_Ref x -> show x
+    -- λ[x : s] t
+    Type_AbsTm x s t -> printf "λ[%s : %s] %s" (show x) (show s) (show t)
+    -- t [a]
+    Type_AppTm t a -> printf "%s[%s]" (show t) (show a)
+    -- λ{x : k} t
+    Type_AbsTy x k t -> printf "λ{%s : %s} %s" (show x) (show k) (show t)
+    -- s{t}
+    Type_AppTy s t -> printf "%s{%s}" (show s) (show t)
+    -- ι [x] t
+    Type_Iota x t -> printf "ι[%s] %s" (show x) (show t)
+
+instance Show Kind where
+  show = \case
+    -- `•`
+    Kind_Unit -> "•"
+    -- λ[x : t] k
+    Kind_AbsTm x t k -> printf "λ[%s : %s] %s" (show x) (show t) (show k)
+    -- λ{x : k} l
+    Kind_AbsTy x k l -> printf "λ{%s : %s} %s" (show x) (show k) (show l)
 
 -- instance Py.Pretty Term where
 --   pretty = \case

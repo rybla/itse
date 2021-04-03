@@ -5,10 +5,13 @@
 module Language.Itse.Parsing where
 
 import Control.Monad
+import Control.Monad.State
 import Language.Itse.Grammar
-import Text.Parsec
+import Text.Parsec hiding (State)
+import Text.Parsec.Expr
 import Text.Parsec.Language
 import qualified Text.Parsec.Token as Token
+import Text.Printf (printf)
 
 type Parser a = Parsec String String a
 
@@ -42,13 +45,13 @@ stmt_DefnTy =
 ### Term
 -}
 
-term, term' :: Parser Term
+term, term1 :: Parser Term
 term =
   (choice . map try)
     [ term_App,
-      term'
+      term1
     ]
-term' =
+term1 =
   (choice . map try)
     [ parens term,
       term_Abs,
@@ -69,7 +72,7 @@ term_Abs = do
       Right (x, k) -> Term_AbsTy x k
 term_App = do
   foldl term_App'
-    <$> (do a <- term'; arg >>= pure . term_App' a)
+    <$> (do a <- term1; arg >>= pure . term_App' a)
     <*> many arg
   where
     term_App' a = \case
@@ -80,17 +83,28 @@ term_App = do
 ### Type
 -}
 
-type_, type' :: Parser Type
-type_ =
+type_ :: Parser Type
+type_ = buildExpressionParser table type1
+  where
+    table =
+      [[binary "->" (Type_AbsTm $ toName "_") AssocRight]]
+    binary name cons assoc = Infix (reservedOp name >> return cons) assoc
+
+type1, type2, type3 :: Parser Type
+type1 =
+  choice . map try $
+    [ type_Abs,
+      type_Iota,
+      type2
+    ]
+type2 =
   choice . map try $
     [ type_App,
-      type'
+      type3
     ]
-type' =
+type3 =
   choice . map try $
     [ parens type_,
-      type_Abs,
-      type_Iota,
       type_Ref
     ]
 
@@ -101,27 +115,35 @@ type_Abs = do
   foldl (\f p -> f . type_Abs' p)
     <$> (prm >>= pure . type_Abs')
     <*> many prm
-    <*> type'
+    <*> type_
   where
     type_Abs' = \case
       Left (x, t) -> Type_AbsTm x t
       Right (x, k) -> Type_AbsTy x k
 type_App = do
   foldl type_App'
-    <$> (do a <- type'; arg >>= pure . type_App' a)
+    <$> (do a <- type3; arg >>= pure . type_App' a)
     <*> many arg
   where
     type_App' s = \case
       Left a -> Type_AppTm s a
       Right t -> Type_AppTy s t
-type_Iota = do iota; x <- parens nameTm; t <- type_; return $ Type_Iota x t
+type_Iota =
+  do iota; x <- prmIota; t <- type_; return $ Type_Iota x t
 
 {-
 ### Kind
 -}
 
 kind :: Parser Kind
-kind =
+kind = buildExpressionParser table kind1
+  where
+    table =
+      [[binary "->" (Kind_AbsTy $ toName "_") AssocRight]]
+    binary name cons assoc = Infix (reservedOp name >> return cons) assoc
+
+kind1 :: Parser Kind
+kind1 =
   choice . map try $
     [ kind_Unit,
       kind_AbsTm,
@@ -143,9 +165,6 @@ nameTm = NameTm <$> identifier
 nameTy :: Parser (Name Type)
 nameTy = NameTy <$> identifier
 
-nameKd :: Parser (Name Kind)
-nameKd = NameKd <$> identifier
-
 {-
 ### Utilities
 -}
@@ -159,22 +178,25 @@ par1 = void $ symbol ")"
 brk0 = void $ symbol "{"
 brk1 = void $ symbol "}"
 
-wild :: Parser String
-wild = symbol "_"
+wild :: ToName a => Parser (Name a)
+wild = toName <$> symbol "_"
 
 -- parameters
 prmTm :: Parser (Name Term, Type)
-prmTm = parens do x <- (nameTm <|> NameTm <$> symbol "_"); colon; t <- type_; return (x, t)
+prmTm = brackets do x <- (nameTm <|> wild); colon; t <- type_; return (x, t)
 
 prmTy :: Parser (Name Type, Kind)
-prmTy = braces do x <- (nameTy <|> NameTy <$> symbol "_"); colon; k <- kind; return (x, k)
+prmTy = braces do x <- (nameTy <|> wild); colon; k <- kind; return (x, k)
+
+prmIota :: Parser (Name Term)
+prmIota = brackets nameTm
 
 prm :: Parser (Either (Name Term, Type) (Name Type, Kind))
 prm = Left <$> prmTm <|> Right <$> prmTy
 
 -- arguments
 argTm :: Parser Term
-argTm = parens term
+argTm = brackets term
 
 argTy :: Parser Type
 argTy = braces type_
@@ -196,6 +218,7 @@ itseLanguageDef =
   emptyDef
     { Token.identStart = letter,
       Token.identLetter = alphaNum <|> oneOf "_'",
+      Token.reservedOpNames = words "->",
       Token.caseSensitive = True
     }
 
@@ -214,4 +237,73 @@ braces = Token.braces itseTokenParser
 
 colon = Token.colon itseTokenParser
 
-test p s = runParser (do a <- p; eof; return a) "" "" s
+reservedOp = Token.reservedOp itseTokenParser
+
+{-
+## Unique Wildcards
+
+Each wildcard from "_" to a unique name of the form "_<int>". This will not
+overlap with a legal identifier since '_' cannot be the start of an identifier.
+-}
+
+uniqueWildcards_Prgm :: Prgm -> Prgm
+uniqueWildcards_Prgm = \case
+  Prgm stmts -> Prgm (uniqueWildcards_Stmt <$> stmts)
+
+uniqueWildcards_Stmt :: Stmt -> Stmt
+uniqueWildcards_Stmt = \case
+  Stmt_DefnTm x t a -> Stmt_DefnTm x (uniqueWildcards t) (uniqueWildcards a)
+  Stmt_DefnTy x k t -> Stmt_DefnTy x (uniqueWildcards k) (uniqueWildcards t)
+
+uniqueWildcards :: ToExpr a => a -> a
+uniqueWildcards _e = evalState (go _e) 0
+  where
+    go :: ToExpr a => a -> State Int a
+    go e = case toExpr e of
+      Term _ -> case e of
+        Term_Ref x ->
+          return $ Term_Ref x
+        Term_AbsTm x t a ->
+          Term_AbsTm <$> procName x <*> go t <*> go a
+        Term_AbsTy x k t ->
+          Term_AbsTy <$> procName x <*> go k <*> go t
+        Term_AppTm a b ->
+          Term_AppTm <$> go a <*> go b
+        Term_AppTy a t ->
+          Term_AppTy <$> go a <*> go t
+      Type _ -> case e of
+        Type_Ref x ->
+          return $ Type_Ref x
+        Type_AbsTm x s t ->
+          Type_AbsTm <$> procName x <*> go s <*> go t
+        Type_AbsTy x k t ->
+          Type_AbsTy <$> procName x <*> go k <*> go t
+        Type_AppTm t a ->
+          Type_AppTm <$> go t <*> go a
+        Type_AppTy s t ->
+          Type_AppTy <$> go s <*> go t
+        Type_Iota x t ->
+          Type_Iota <$> procName x <*> go t
+      Kind _ ->
+        return e
+
+    procName :: ToName a => Name a -> State Int (Name a)
+    procName x = if isWildcard x then uniqWild else return x
+
+    uniqWild :: ToName a => State Int (Name a)
+    uniqWild = do
+      i <- get
+      modify (+ 1)
+      return . toName $ printf "_%i" i
+
+isWildcard :: Name a -> Bool
+isWildcard = ("_" ==) . fromName
+
+{-
+## Static Parsing
+-}
+
+runParserStatic :: ToExpr a => String -> Parser a -> String -> a
+runParserStatic lbl prs src = case runParser (do a <- prs; eof; return a) "" lbl src of
+  Left expt -> error . show $ expt
+  Right a -> uniqueWildcards a
