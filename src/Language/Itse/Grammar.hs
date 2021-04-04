@@ -100,6 +100,12 @@ instance Show (Expr a) where
     Type t -> show t
     Kind k -> show k
 
+exprVariant :: Expr a -> String
+exprVariant = \case
+  Term _ -> "term"
+  Type _ -> "type"
+  Kind _ -> "kind"
+
 {-
 ## Name
 -}
