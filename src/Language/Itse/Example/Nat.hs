@@ -24,12 +24,40 @@ suc
 zero
 :: Nat
 := λ{A : •} [s : A -> A] [z : A] z
+
+ι[x]
+λ{P : λ[_ : Nat] •}
+λ[_0 : λ[n : Nat] λ[_1 : P[n]]
+P[suc[n]]]
+λ[_2 : P[zero]] P[x]
+
+ι[x] (
+  λ{P : λ[_ : Nat] (•)} (
+    λ[_0 : λ[n : Nat] (λ[_1 : P[n]] (P[suc[n]]))] (
+      λ[_2 : P[zero]] (
+        P[x]
+      )
+    )
+  )
+)
+
+ι[x] (
+  λ{P : λ[_ : Nat] (•)} (
+    λ[n : Nat] (
+      λ[_0 : λ[_1 : P[n]] (P[suc[n]])] (
+        λ[_2 : P[zero]] (
+          P[x]
+        )
+      )
+    )
+  )
+)
 -}
 
 itse_Nat :: Type
 itse_Nat =
   runParserStatic "Nat" type_ $
-    "ι[x] λ{P : λ[_:Nat] •} (λ[n : Nat] (P[n] -> P[suc[n]]) -> P[zero] -> P[x])"
+    "ι[x] λ{P : λ[_:Nat] •} ((λ[n : Nat] (P[n] -> P[suc[n]])) -> P[zero] -> P[x])"
 
 itse_suc :: Term
 itse_suc =

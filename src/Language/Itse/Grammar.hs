@@ -1,4 +1,5 @@
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Language.Itse.Grammar where
 
@@ -153,11 +154,11 @@ instance Show Term where
     -- x
     Term_Ref x -> show x
     -- λ[x : t] a
-    Term_AbsTm x t a -> printf "λ[%s : %s] %s" (show x) (show t) (show a)
+    Term_AbsTm x t a -> printf "λ[%s : %s] (%s)" (show x) (show t) (show a)
     -- a[b]
     Term_AppTm a b -> printf "%s[%s]" (show a) (show b)
     -- λ{x : k} a
-    Term_AbsTy x k a -> printf "λ{%s : %s} %s" (show x) (show k) (show a)
+    Term_AbsTy x k a -> printf "λ{%s : %s} (%s)" (show x) (show k) (show a)
     -- a {t}
     Term_AppTy a t -> printf "%s{%s}" (show a) (show t)
 
@@ -166,24 +167,24 @@ instance Show Type where
     -- x
     Type_Ref x -> show x
     -- λ[x : s] t
-    Type_AbsTm x s t -> printf "λ[%s : %s] %s" (show x) (show s) (show t)
+    Type_AbsTm x s t -> printf "λ[%s : %s] (%s)" (show x) (show s) (show t)
     -- t [a]
     Type_AppTm t a -> printf "%s[%s]" (show t) (show a)
     -- λ{x : k} t
-    Type_AbsTy x k t -> printf "λ{%s : %s} %s" (show x) (show k) (show t)
+    Type_AbsTy x k t -> printf "λ{%s : %s} (%s)" (show x) (show k) (show t)
     -- s{t}
     Type_AppTy s t -> printf "%s{%s}" (show s) (show t)
     -- ι [x] t
-    Type_Iota x t -> printf "ι[%s] %s" (show x) (show t)
+    Type_Iota x t -> printf "ι[%s] (%s)" (show x) (show t)
 
 instance Show Kind where
   show = \case
     -- `•`
     Kind_Unit -> "•"
     -- λ[x : t] k
-    Kind_AbsTm x t k -> printf "λ[%s : %s] %s" (show x) (show t) (show k)
+    Kind_AbsTm x t k -> printf "λ[%s : %s] (%s)" (show x) (show t) (show k)
     -- λ{x : k} l
-    Kind_AbsTy x k l -> printf "λ{%s : %s} %s" (show x) (show k) (show l)
+    Kind_AbsTy x k l -> printf "λ{%s : %s} (%s)" (show x) (show k) (show l)
 
 -- instance Py.Pretty Term where
 --   pretty = \case
